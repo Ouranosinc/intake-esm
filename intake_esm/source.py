@@ -98,11 +98,7 @@ def _expand_dims(expand_dims, ds):
         for variable in ds.attrs[INTAKE_ESM_VARS_KEY]:
             edims = {}
             for dim, crd in expand_dims.items():
-                if dim in ds[variable].dims:
-                    if ds.dims[dim] != len(crd):
-                        raise ValueError(
-                            f'Different size for dim {dim} in dataset and catalog. ({crd})'
-                        )
+                if dim in ds[variable].dims and ds.dims[dim] != len(crd):
                     # Dimension already exist and has the same length
                     if dim in ds.coords:
                         # Raise if values are different
