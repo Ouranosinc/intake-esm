@@ -96,7 +96,27 @@ def _update_attrs(additional_attrs, ds):
 def _expand_dims(expand_dims, ds):
     if expand_dims:
         for variable in ds.attrs[INTAKE_ESM_VARS_KEY]:
-            ds[variable] = ds[variable].expand_dims(**expand_dims)
+            edims = {}
+            for dim, crd in expand_dims.items():
+                if dim in ds[variable].dims:
+                    if ds.dims[dim] != len(crd):
+                        raise ValueError(
+                            f'Different size for dim {dim} in dataset and catalog. ({crd})'
+                        )
+                    # Dimension already exist and has the same length
+                    if dim in ds.coords:
+                        # Raise if values are different
+                        if not all(ds[dim] == crd):
+                            raise ValueError(
+                                f'Conflicting values for coordinate {dim} in dataset and catalog.'
+                            )
+                    else:  # No values, simply assign what was given by the catalog
+                        ds[dim] = crd
+                else:  # Dimension does not exist : expand.
+                    # If it does exist but has a different size, expand_dims will raise.
+                    edims[dim] = crd
+
+            ds[variable] = ds[variable].expand_dims(**edims)
 
     return ds
 
@@ -213,7 +233,11 @@ class ESMDataSource(DataSource):
                     ),
                     preprocess=self.preprocess,
                     expand_dims={
-                        agg.attribute_name: [record[agg.attribute_name]]
+                        agg.attribute_name: (
+                            [record[agg.attribute_name]]
+                            if not isinstance(record[agg.attribute_name], tuple)
+                            else record[agg.attribute_name]
+                        )
                         for agg in self.aggregations
                         if agg.type.value == 'join_new'
                     },
