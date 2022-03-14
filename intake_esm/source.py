@@ -7,15 +7,15 @@ import pydantic
 import xarray as xr
 from intake.source.base import DataSource, Schema
 
+from . import utils as u
 from .cat import Aggregation, DataFormat
-from .utils import INTAKE_ESM_ATTRS_PREFIX, INTAKE_ESM_DATASET_KEY, INTAKE_ESM_VARS_KEY
 
 
 class ESMDataSourceError(Exception):
     pass
 
 
-def _get_xarray_open_kwargs(data_format, xarray_open_kwargs=None, storage_options=None):
+def _get_xarray_open_kwargs(data_format, xarray_open_kwargs=None):
     xarray_open_kwargs = (xarray_open_kwargs or {}).copy()
     _default_open_kwargs = {
         'engine': 'zarr' if data_format == 'zarr' else 'netcdf4',
@@ -30,7 +30,7 @@ def _get_xarray_open_kwargs(data_format, xarray_open_kwargs=None, storage_option
         xarray_open_kwargs['engine'] == 'zarr'
         and 'storage_options' not in xarray_open_kwargs['backend_kwargs']
     ):
-        xarray_open_kwargs['backend_kwargs']['storage_options'] = {} or storage_options
+        xarray_open_kwargs['backend_kwargs']['storage_options'] = {}
     return xarray_open_kwargs
 
 
@@ -74,9 +74,9 @@ def _open_dataset(
         variable_intersection = set(requested_variables).intersection(set(varname))
         variables = [variable for variable in variable_intersection if variable in ds.data_vars]
         ds = ds[variables]
-        ds.attrs[INTAKE_ESM_VARS_KEY] = variables
+        ds.attrs[u.INTAKE_ESM_VARS_KEY] = variables
     else:
-        ds.attrs[INTAKE_ESM_VARS_KEY] = varname
+        ds.attrs[u.INTAKE_ESM_VARS_KEY] = varname
 
     ds = _expand_dims(expand_dims, ds)
     ds = _update_attrs(additional_attrs, ds)
@@ -87,7 +87,7 @@ def _update_attrs(additional_attrs, ds):
     additional_attrs = additional_attrs or {}
     if additional_attrs:
         additional_attrs = {
-            f'{INTAKE_ESM_ATTRS_PREFIX}/{key}': value for key, value in additional_attrs.items()
+            f'{u.INTAKE_ESM_ATTRS_PREFIX}/{key}': value for key, value in additional_attrs.items()
         }
     ds.attrs = {**ds.attrs, **additional_attrs}
     return ds
@@ -95,7 +95,7 @@ def _update_attrs(additional_attrs, ds):
 
 def _expand_dims(expand_dims, ds):
     if expand_dims:
-        for variable in ds.attrs[INTAKE_ESM_VARS_KEY]:
+        for variable in ds.attrs[u.INTAKE_ESM_VARS_KEY]:
             ds[variable] = ds[variable].expand_dims(**expand_dims)
 
     return ds
@@ -209,7 +209,7 @@ class ESMDataSource(DataSource):
                     record[self.path_column_name],
                     record[self.variable_column_name],
                     xarray_open_kwargs=_get_xarray_open_kwargs(
-                        record['_data_format_'], self.xarray_open_kwargs, self.storage_options
+                        record['_data_format_'], self.xarray_open_kwargs
                     ),
                     preprocess=self.preprocess,
                     expand_dims={
@@ -230,7 +230,7 @@ class ESMDataSource(DataSource):
                 datasets = sorted(
                     datasets,
                     key=lambda ds: tuple(
-                        f'{INTAKE_ESM_ATTRS_PREFIX}/{agg.attribute_name}'
+                        f'{u.INTAKE_ESM_ATTRS_PREFIX}/{agg.attribute_name}'
                         for agg in self.aggregations
                     ),
                 )
@@ -238,14 +238,14 @@ class ESMDataSource(DataSource):
                     {'scheduler': 'single-threaded', 'array.slicing.split_large_chunks': True}
                 ):  # Use single-threaded scheduler
                     datasets = [
-                        ds.set_coords(set(ds.variables) - set(ds.attrs[INTAKE_ESM_VARS_KEY]))
+                        ds.set_coords(set(ds.variables) - set(ds.attrs[u.INTAKE_ESM_VARS_KEY]))
                         for ds in datasets
                     ]
                     self._ds = xr.combine_by_coords(
                         datasets, **self.xarray_combine_by_coords_kwargs
                     )
 
-            self._ds.attrs[INTAKE_ESM_DATASET_KEY] = self.key
+            self._ds.attrs[u.INTAKE_ESM_DATASET_KEY] = self.key
 
         except Exception as exc:
             raise ESMDataSourceError(
